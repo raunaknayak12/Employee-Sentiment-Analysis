@@ -1,0 +1,910 @@
+# ============================================================================
+# create_notebook.py — Convert analysis scripts into a Jupyter Notebook
+# Employee Sentiment Analysis Project
+# ============================================================================
+
+import json
+import os
+
+def make_cell(cell_type, source, metadata=None):
+    """Create a Jupyter notebook cell."""
+    cell = {
+        "cell_type": cell_type,
+        "metadata": metadata or {},
+        "source": source if isinstance(source, list) else source.split('\n')
+    }
+    if cell_type == "code":
+        cell["execution_count"] = None
+        cell["outputs"] = []
+    return cell
+
+def create_notebook():
+    """Create the full Jupyter notebook with narrative sections."""
+    
+    cells = []
+    
+    # ── Title ──
+    cells.append(make_cell("markdown", [
+        "# Employee Sentiment Analysis\n",
+        "\n",
+        "> **Project:** Employee Sentiment & Engagement Analysis  \n",
+        "> **Dataset:** `test(in).csv` (Enron Email Corpus)  \n",
+        "> **Language:** Python  \n",
+        "> **Libraries:** PyTorch, HuggingFace Transformers, scikit-learn, pandas, matplotlib, seaborn  \n",
+        "\n",
+        "---\n",
+        "\n",
+        "## Table of Contents\n",
+        "\n",
+        "1. [Setup & Imports](#setup)\n",
+        "2. [Task 1: Sentiment Labeling](#task1)\n",
+        "3. [Task 2: Exploratory Data Analysis](#task2)\n",
+        "4. [Task 3: Employee Score Calculation](#task3)\n",
+        "5. [Task 4: Employee Ranking](#task4)\n",
+        "6. [Task 5: Flight Risk Identification](#task5)\n",
+        "7. [Task 6: Predictive Modeling](#task6)\n",
+        "8. [Summary & Conclusions](#summary)\n",
+    ]))
+    
+    # ── Setup ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='setup'></a>\n",
+        "## Setup & Imports\n",
+        "\n",
+        "We begin by importing all required libraries and configuring the visualization style.\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib\n",
+        "import matplotlib.pyplot as plt\n",
+        "import matplotlib.dates as mdates\n",
+        "import seaborn as sns\n",
+        "import re\n",
+        "import os\n",
+        "import warnings\n",
+        "warnings.filterwarnings('ignore')\n",
+        "\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.linear_model import LinearRegression\n",
+        "from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score\n",
+        "\n",
+        "# Visual style\n",
+        "plt.rcParams['figure.figsize'] = (12, 6)\n",
+        "plt.rcParams['figure.dpi'] = 150\n",
+        "plt.rcParams['font.family'] = 'sans-serif'\n",
+        "plt.rcParams['axes.grid'] = True\n",
+        "plt.rcParams['grid.alpha'] = 0.3\n",
+        "sns.set_theme(style='whitegrid', palette='husl')\n",
+        "\n",
+        "# Visualization directory\n",
+        "VIZ_DIR = 'visualization'\n",
+        "os.makedirs(VIZ_DIR, exist_ok=True)\n",
+        "\n",
+        "print('All libraries loaded successfully!')\n",
+    ]))
+    
+    # ── Data Loading ──
+    cells.append(make_cell("markdown", [
+        "### Data Loading & Cleaning\n",
+        "\n",
+        "We load the raw `test(in).csv` dataset and perform several cleaning steps:\n",
+        "- Remove MIME/quoted-printable encoding artifacts from email bodies\n",
+        "- Parse date fields into datetime objects\n",
+        "- Extract employee names from email addresses\n",
+        "- Compute message length and word count features\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "from data_prep import load_and_clean_data\n",
+        "\n",
+        "df = load_and_clean_data('test(in).csv')\n",
+        "df.head()\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Quick overview of the cleaned dataset\n",
+        "print(f'Shape: {df.shape}')\n",
+        "print(f'Columns: {list(df.columns)}')\n",
+        "print(f'Date range: {df[\"date\"].min().date()} to {df[\"date\"].max().date()}')\n",
+        "print(f'Unique employees: {df[\"employee\"].nunique()}')\n",
+        "df.info()\n",
+    ]))
+    
+    # ── Task 1 ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='task1'></a>\n",
+        "## Task 1: Sentiment Labeling\n",
+        "\n",
+        "### Approach & Justification\n",
+        "\n",
+        "We use the **`cardiffnlp/twitter-roberta-base-sentiment-latest`** model from HuggingFace Transformers. This is a RoBERTa-based model fine-tuned on ~124M tweets for 3-class sentiment classification.\n",
+        "\n",
+        "**Why this model?**\n",
+        "1. **Native 3-class output** — matches our Positive/Neutral/Negative requirement exactly\n",
+        "2. **Pre-trained and well-validated** — no labeled training data needed\n",
+        "3. **Handles informal/mixed-tone text well** — suitable for email communications\n",
+        "4. **Runs locally** — fully reproducible, no API keys or external dependencies\n",
+        "5. **Widely cited** — established model in NLP research\n",
+        "\n",
+        "Each message's combined subject + body text (truncated to 500 characters) is processed through the model pipeline.\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification\n",
+        "import torch\n",
+        "\n",
+        "# Load the sentiment model\n",
+        "model_name = 'cardiffnlp/twitter-roberta-base-sentiment-latest'\n",
+        "tokenizer = AutoTokenizer.from_pretrained(model_name)\n",
+        "model = AutoModelForSequenceClassification.from_pretrained(model_name)\n",
+        "\n",
+        "sentiment_pipeline = pipeline(\n",
+        "    'sentiment-analysis',\n",
+        "    model=model,\n",
+        "    tokenizer=tokenizer,\n",
+        "    max_length=512,\n",
+        "    truncation=True,\n",
+        "    device=-1  # CPU\n",
+        ")\n",
+        "\n",
+        "# Label mapping\n",
+        "label_map = {\n",
+        "    'positive': 'Positive',\n",
+        "    'negative': 'Negative',\n",
+        "    'neutral': 'Neutral'\n",
+        "}\n",
+        "\n",
+        "print('Model loaded successfully!')\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Classify sentiment in batches\n",
+        "batch_size = 64\n",
+        "sentiments = []\n",
+        "total = len(df)\n",
+        "\n",
+        "for i in range(0, total, batch_size):\n",
+        "    batch_texts = df['full_text'].iloc[i:i+batch_size].tolist()\n",
+        "    batch_texts = [str(t)[:500] if t and len(str(t).strip()) > 0 else 'neutral message' for t in batch_texts]\n",
+        "    \n",
+        "    try:\n",
+        "        results = sentiment_pipeline(batch_texts, batch_size=batch_size)\n",
+        "        for r in results:\n",
+        "            label = r['label'].lower()\n",
+        "            sentiments.append(label_map.get(label, 'Neutral'))\n",
+        "    except Exception as e:\n",
+        "        for t in batch_texts:\n",
+        "            try:\n",
+        "                r = sentiment_pipeline(t)[0]\n",
+        "                sentiments.append(label_map.get(r['label'].lower(), 'Neutral'))\n",
+        "            except:\n",
+        "                sentiments.append('Neutral')\n",
+        "    \n",
+        "    if (i // batch_size) % 25 == 0:\n",
+        "        print(f'Progress: {min(i + batch_size, total)}/{total} messages')\n",
+        "\n",
+        "df['sentiment'] = sentiments\n",
+        "\n",
+        "print(f'\\nSentiment labeling complete!')\n",
+        "print(f'\\nDistribution:')\n",
+        "print(df['sentiment'].value_counts())\n",
+        "print(f'\\nNaN check: {df[\"sentiment\"].isna().sum()} missing values')\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Save labeled dataset\n",
+        "df.to_csv('labeled_data.csv', index=False)\n",
+        "print('Labeled dataset saved to labeled_data.csv')\n",
+        "\n",
+        "# Show sample\n",
+        "df[['Subject', 'employee', 'date', 'sentiment']].head(10)\n",
+    ]))
+    
+    # ── Task 2 ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='task2'></a>\n",
+        "## Task 2: Exploratory Data Analysis (EDA)\n",
+        "\n",
+        "In this section, we explore the dataset's structure, distribution, and trends through comprehensive analysis and visualizations.\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.1 Dataset Overview\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Dataset overview\n",
+        "print(f'Total records: {len(df)}')\n",
+        "print(f'\\nData Types:')\n",
+        "print(df.dtypes)\n",
+        "print(f'\\nMissing Values:')\n",
+        "print(df.isnull().sum())\n",
+        "print(f'\\nBasic Statistics:')\n",
+        "df[['msg_length', 'word_count']].describe()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.2 Sentiment Distribution\n",
+        "\n",
+        "We visualize the distribution of sentiment labels across the dataset.\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Sentiment distribution\n",
+        "colors = {'Positive': '#2ecc71', 'Neutral': '#3498db', 'Negative': '#e74c3c'}\n",
+        "sentiment_counts = df['sentiment'].value_counts()\n",
+        "\n",
+        "fig, axes = plt.subplots(1, 2, figsize=(14, 6))\n",
+        "\n",
+        "# Bar chart\n",
+        "bars = axes[0].bar(sentiment_counts.index, sentiment_counts.values,\n",
+        "                   color=[colors.get(s, '#95a5a6') for s in sentiment_counts.index],\n",
+        "                   edgecolor='white', linewidth=1.5)\n",
+        "axes[0].set_title('Sentiment Distribution', fontsize=14, fontweight='bold')\n",
+        "axes[0].set_xlabel('Sentiment')\n",
+        "axes[0].set_ylabel('Count')\n",
+        "for bar, count in zip(bars, sentiment_counts.values):\n",
+        "    axes[0].text(bar.get_x() + bar.get_width()/2., bar.get_height() + 50,\n",
+        "                f'{count}\\n({count/len(df)*100:.1f}%)', ha='center', va='bottom', fontweight='bold')\n",
+        "\n",
+        "# Pie chart\n",
+        "axes[1].pie(sentiment_counts.values, labels=sentiment_counts.index, autopct='%1.1f%%',\n",
+        "            colors=[colors.get(s, '#95a5a6') for s in sentiment_counts.index],\n",
+        "            startangle=90, explode=[0.05]*len(sentiment_counts),\n",
+        "            shadow=True, textprops={'fontsize': 12})\n",
+        "axes[1].set_title('Sentiment Proportion', fontsize=14, fontweight='bold')\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/sentiment_distribution.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.3 Sentiment Trends Over Time\n",
+        "\n",
+        "We analyze how sentiment evolves month-by-month to identify temporal patterns.\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Monthly sentiment trends\n",
+        "monthly_sentiment = df.groupby([df['date'].dt.to_period('M'), 'sentiment']).size().unstack(fill_value=0)\n",
+        "monthly_sentiment.index = monthly_sentiment.index.to_timestamp()\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(14, 6))\n",
+        "for sent, color in colors.items():\n",
+        "    if sent in monthly_sentiment.columns:\n",
+        "        ax.plot(monthly_sentiment.index, monthly_sentiment[sent],\n",
+        "                label=sent, color=color, linewidth=2, marker='o', markersize=4)\n",
+        "\n",
+        "ax.set_title('Monthly Sentiment Trends', fontsize=14, fontweight='bold')\n",
+        "ax.set_xlabel('Month')\n",
+        "ax.set_ylabel('Message Count')\n",
+        "ax.legend(frameon=True, fancybox=True, shadow=True)\n",
+        "ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))\n",
+        "plt.xticks(rotation=45)\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/sentiment_trends_over_time.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.4 Top Senders by Volume\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Top senders\n",
+        "top_senders = df['employee'].value_counts().head(15)\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 7))\n",
+        "bars = ax.barh(range(len(top_senders)), top_senders.values,\n",
+        "               color=sns.color_palette('viridis', len(top_senders)))\n",
+        "ax.set_yticks(range(len(top_senders)))\n",
+        "ax.set_yticklabels(top_senders.index)\n",
+        "ax.set_xlabel('Number of Messages')\n",
+        "ax.set_title('Top 15 Employees by Message Volume', fontsize=14, fontweight='bold')\n",
+        "ax.invert_yaxis()\n",
+        "for i, v in enumerate(top_senders.values):\n",
+        "    ax.text(v + 5, i, str(v), va='center', fontweight='bold')\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/top_senders.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.5 Message Length Distribution\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Message length distribution\n",
+        "fig, axes = plt.subplots(1, 2, figsize=(14, 6))\n",
+        "\n",
+        "axes[0].hist(df['msg_length'].clip(upper=5000), bins=50, color='#3498db', alpha=0.7, edgecolor='white')\n",
+        "axes[0].set_title('Message Length Distribution (chars)', fontsize=13, fontweight='bold')\n",
+        "axes[0].set_xlabel('Character Count')\n",
+        "axes[0].set_ylabel('Frequency')\n",
+        "axes[0].axvline(df['msg_length'].median(), color='red', linestyle='--',\n",
+        "                label=f\"Median: {df['msg_length'].median():.0f}\")\n",
+        "axes[0].legend()\n",
+        "\n",
+        "axes[1].hist(df['word_count'].clip(upper=1000), bins=50, color='#e67e22', alpha=0.7, edgecolor='white')\n",
+        "axes[1].set_title('Word Count Distribution', fontsize=13, fontweight='bold')\n",
+        "axes[1].set_xlabel('Word Count')\n",
+        "axes[1].set_ylabel('Frequency')\n",
+        "axes[1].axvline(df['word_count'].median(), color='red', linestyle='--',\n",
+        "                label=f\"Median: {df['word_count'].median():.0f}\")\n",
+        "axes[1].legend()\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/message_length_distribution.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.6 Message Length by Sentiment\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Box plot: word count by sentiment\n",
+        "fig, ax = plt.subplots(figsize=(10, 6))\n",
+        "sentiment_order = ['Positive', 'Neutral', 'Negative']\n",
+        "palette = [colors[s] for s in sentiment_order if s in df['sentiment'].unique()]\n",
+        "existing_order = [s for s in sentiment_order if s in df['sentiment'].unique()]\n",
+        "\n",
+        "sns.boxplot(data=df[df['word_count'] < 500], x='sentiment', y='word_count',\n",
+        "            order=existing_order, palette=palette, ax=ax, showfliers=False)\n",
+        "ax.set_title('Word Count by Sentiment Category', fontsize=14, fontweight='bold')\n",
+        "ax.set_xlabel('Sentiment')\n",
+        "ax.set_ylabel('Word Count')\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/message_length_by_sentiment.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.7 Day-of-Week Analysis\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Sentiment by day of week\n",
+        "day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']\n",
+        "day_sentiment = df.groupby(['day_of_week', 'sentiment']).size().unstack(fill_value=0)\n",
+        "day_sentiment = day_sentiment.reindex(day_order)\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(12, 6))\n",
+        "day_sentiment.plot(kind='bar', stacked=True, ax=ax,\n",
+        "                   color=[colors.get(c, '#95a5a6') for c in day_sentiment.columns],\n",
+        "                   edgecolor='white', linewidth=0.5)\n",
+        "ax.set_title('Sentiment Distribution by Day of Week', fontsize=14, fontweight='bold')\n",
+        "ax.set_xlabel('Day of Week')\n",
+        "ax.set_ylabel('Message Count')\n",
+        "ax.legend(title='Sentiment', frameon=True)\n",
+        "plt.xticks(rotation=45)\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/sentiment_by_day_of_week.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.8 Word Clouds by Sentiment\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Word clouds per sentiment\n",
+        "from wordcloud import WordCloud\n",
+        "\n",
+        "fig, axes = plt.subplots(1, 3, figsize=(20, 6))\n",
+        "\n",
+        "for idx, (sent, color_hex) in enumerate([('Positive', '#2ecc71'), ('Neutral', '#3498db'), ('Negative', '#e74c3c')]):\n",
+        "    text = ' '.join(df[df['sentiment'] == sent]['body_clean'].dropna().astype(str).tolist())\n",
+        "    if text.strip():\n",
+        "        wc = WordCloud(width=800, height=400, background_color='white',\n",
+        "                      max_words=100,\n",
+        "                      colormap='Greens' if sent == 'Positive' else ('Blues' if sent == 'Neutral' else 'Reds'),\n",
+        "                      contour_width=2, contour_color=color_hex).generate(text)\n",
+        "        axes[idx].imshow(wc, interpolation='bilinear')\n",
+        "    axes[idx].set_title(f'{sent} Messages', fontsize=14, fontweight='bold')\n",
+        "    axes[idx].axis('off')\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/word_clouds.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### 2.9 Anomaly Detection — Message Volume Spikes\n",
+        "\n",
+        "We identify days with unusually high message volumes (> mean + 2σ) that may indicate significant organizational events.\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Anomaly detection\n",
+        "daily_volume = df.groupby(df['date'].dt.date).size()\n",
+        "mean_vol = daily_volume.mean()\n",
+        "std_vol = daily_volume.std()\n",
+        "anomaly_threshold = mean_vol + 2 * std_vol\n",
+        "anomaly_dates = daily_volume[daily_volume > anomaly_threshold]\n",
+        "\n",
+        "fig, ax = plt.subplots(figsize=(14, 6))\n",
+        "ax.plot(daily_volume.index, daily_volume.values, color='#3498db', alpha=0.6, linewidth=0.8)\n",
+        "ax.axhline(y=mean_vol, color='green', linestyle='--', label=f'Mean ({mean_vol:.0f})')\n",
+        "ax.axhline(y=anomaly_threshold, color='red', linestyle='--', label=f'Anomaly threshold ({anomaly_threshold:.0f})')\n",
+        "if len(anomaly_dates) > 0:\n",
+        "    ax.scatter(anomaly_dates.index, anomaly_dates.values, color='red', s=50, zorder=5, label='Anomalies')\n",
+        "ax.set_title('Daily Message Volume with Anomaly Detection', fontsize=14, fontweight='bold')\n",
+        "ax.set_xlabel('Date')\n",
+        "ax.set_ylabel('Message Count')\n",
+        "ax.legend(frameon=True)\n",
+        "plt.xticks(rotation=45)\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/anomaly_detection.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+        "\n",
+        "print(f'Anomaly threshold (mean + 2σ): {anomaly_threshold:.0f} messages/day')\n",
+        "print(f'Anomalous days detected: {len(anomaly_dates)}')\n",
+        "if len(anomaly_dates) > 0:\n",
+        "    print(f'Top anomaly dates:')\n",
+        "    print(anomaly_dates.sort_values(ascending=False).head(5))\n",
+    ]))
+    
+    # ── Task 3 ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='task3'></a>\n",
+        "## Task 3: Employee Score Calculation\n",
+        "\n",
+        "### Scoring Method\n",
+        "\n",
+        "We compute a monthly sentiment score per employee using the following mapping:\n",
+        "\n",
+        "| Sentiment | Score |\n",
+        "|-----------|-------|\n",
+        "| Positive  | +1    |\n",
+        "| Neutral   |  0    |\n",
+        "| Negative  | −1    |\n",
+        "\n",
+        "Scores are **aggregated per employee per calendar month** and **reset at the start of each new month** (no carry-over between months).\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Map sentiment to numeric score\n",
+        "score_map = {'Positive': 1, 'Neutral': 0, 'Negative': -1}\n",
+        "df['score'] = df['sentiment'].map(score_map)\n",
+        "\n",
+        "# Aggregate by employee and month\n",
+        "monthly_scores = df.groupby(['employee', 'employee_email', 'year_month']).agg(\n",
+        "    total_score=('score', 'sum'),\n",
+        "    msg_count=('score', 'count'),\n",
+        "    positive_count=('score', lambda x: (x == 1).sum()),\n",
+        "    neutral_count=('score', lambda x: (x == 0).sum()),\n",
+        "    negative_count=('score', lambda x: (x == -1).sum())\n",
+        ").reset_index()\n",
+        "\n",
+        "print(f'Monthly employee-month combinations: {len(monthly_scores)}')\n",
+        "monthly_scores.to_csv('monthly_scores.csv', index=False)\n",
+        "print('Saved: monthly_scores.csv')\n",
+        "monthly_scores.head(10)\n",
+    ]))
+    
+    # ── Task 4 ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='task4'></a>\n",
+        "## Task 4: Employee Ranking\n",
+        "\n",
+        "### Ranking Method\n",
+        "\n",
+        "For each month, we identify:\n",
+        "- **Top 3 Positive Employees** — highest monthly sentiment scores\n",
+        "- **Top 3 Negative Employees** — lowest (most negative) monthly sentiment scores\n",
+        "\n",
+        "Ties are broken alphabetically by employee name (ascending).\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Generate monthly rankings\n",
+        "all_top_positive = []\n",
+        "all_top_negative = []\n",
+        "unique_months = sorted(monthly_scores['year_month'].unique())\n",
+        "\n",
+        "for ym in unique_months:\n",
+        "    month_data = monthly_scores[monthly_scores['year_month'] == ym].copy()\n",
+        "    \n",
+        "    # Top 3 Positive: sort descending by score, then ascending by name\n",
+        "    month_sorted_pos = month_data.sort_values(by=['total_score', 'employee'], ascending=[False, True])\n",
+        "    top3_pos = month_sorted_pos.head(3)[['employee', 'year_month', 'total_score']].copy()\n",
+        "    top3_pos['rank_type'] = 'Top Positive'\n",
+        "    top3_pos['rank'] = range(1, len(top3_pos) + 1)\n",
+        "    \n",
+        "    # Top 3 Negative: sort ascending by score, then ascending by name\n",
+        "    month_sorted_neg = month_data.sort_values(by=['total_score', 'employee'], ascending=[True, True])\n",
+        "    top3_neg = month_sorted_neg.head(3)[['employee', 'year_month', 'total_score']].copy()\n",
+        "    top3_neg['rank_type'] = 'Top Negative'\n",
+        "    top3_neg['rank'] = range(1, len(top3_neg) + 1)\n",
+        "    \n",
+        "    all_top_positive.append(top3_pos)\n",
+        "    all_top_negative.append(top3_neg)\n",
+        "\n",
+        "rankings_positive = pd.concat(all_top_positive, ignore_index=True)\n",
+        "rankings_negative = pd.concat(all_top_negative, ignore_index=True)\n",
+        "\n",
+        "print('── TOP 3 POSITIVE EMPLOYEES (per month) ──')\n",
+        "for ym in unique_months:\n",
+        "    month_pos = rankings_positive[rankings_positive['year_month'] == ym]\n",
+        "    if len(month_pos) > 0:\n",
+        "        print(f'\\n  {ym}:')\n",
+        "        for _, row in month_pos.iterrows():\n",
+        "            print(f'    #{int(row[\"rank\"])} {row[\"employee\"]} (score: {row[\"total_score\"]})')\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "print('── TOP 3 NEGATIVE EMPLOYEES (per month) ──')\n",
+        "for ym in unique_months:\n",
+        "    month_neg = rankings_negative[rankings_negative['year_month'] == ym]\n",
+        "    if len(month_neg) > 0:\n",
+        "        print(f'\\n  {ym}:')\n",
+        "        for _, row in month_neg.iterrows():\n",
+        "            print(f'    #{int(row[\"rank\"])} {row[\"employee\"]} (score: {row[\"total_score\"]})')\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Visualization: Overall rankings\n",
+        "overall_scores = monthly_scores.groupby('employee')['total_score'].sum().sort_values(ascending=False)\n",
+        "top_10_pos_overall = overall_scores.head(10)\n",
+        "top_10_neg_overall = overall_scores.tail(10).sort_values()\n",
+        "\n",
+        "fig, axes = plt.subplots(1, 2, figsize=(16, 7))\n",
+        "\n",
+        "# Top 10 Positive\n",
+        "axes[0].barh(range(len(top_10_pos_overall)), top_10_pos_overall.values,\n",
+        "             color=sns.color_palette('Greens_r', len(top_10_pos_overall)))\n",
+        "axes[0].set_yticks(range(len(top_10_pos_overall)))\n",
+        "axes[0].set_yticklabels(top_10_pos_overall.index)\n",
+        "axes[0].set_xlabel('Total Sentiment Score')\n",
+        "axes[0].set_title('Top 10 Most Positive Employees (Overall)', fontsize=13, fontweight='bold')\n",
+        "axes[0].invert_yaxis()\n",
+        "for i, v in enumerate(top_10_pos_overall.values):\n",
+        "    axes[0].text(v + 0.5, i, f'{v:.0f}', va='center', fontweight='bold')\n",
+        "\n",
+        "# Top 10 Negative\n",
+        "axes[1].barh(range(len(top_10_neg_overall)), top_10_neg_overall.values,\n",
+        "             color=sns.color_palette('Reds', len(top_10_neg_overall)))\n",
+        "axes[1].set_yticks(range(len(top_10_neg_overall)))\n",
+        "axes[1].set_yticklabels(top_10_neg_overall.index)\n",
+        "axes[1].set_xlabel('Total Sentiment Score')\n",
+        "axes[1].set_title('Top 10 Most Negative Employees (Overall)', fontsize=13, fontweight='bold')\n",
+        "axes[1].invert_yaxis()\n",
+        "for i, v in enumerate(top_10_neg_overall.values):\n",
+        "    axes[1].text(v - 0.5 if v < 0 else v + 0.5, i, f'{v:.0f}', va='center', fontweight='bold',\n",
+        "                ha='right' if v < 0 else 'left')\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/employee_rankings.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+        "\n",
+        "# Save rankings\n",
+        "rankings_positive.to_csv('rankings_positive.csv', index=False)\n",
+        "rankings_negative.to_csv('rankings_negative.csv', index=False)\n",
+        "print('Saved: rankings_positive.csv, rankings_negative.csv')\n",
+    ]))
+    
+    # ── Task 5 ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='task5'></a>\n",
+        "## Task 5: Flight Risk Identification\n",
+        "\n",
+        "### Definition\n",
+        "\n",
+        "A **flight risk** is any employee who sent **4 or more negative messages within any rolling 30-day window**.\n",
+        "\n",
+        "### Implementation\n",
+        "\n",
+        "- For each employee, we collect all dates of negative messages (sorted chronologically)\n",
+        "- Using a **sliding window approach**, for each negative message date, we count how many other negative messages occurred within the next 30 days\n",
+        "- If any window contains ≥ 4 negative messages, the employee is flagged\n",
+        "- This handles overlapping windows correctly and is NOT limited to calendar month boundaries\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Flight risk analysis\n",
+        "negative_msgs = df[df['sentiment'] == 'Negative'][['employee', 'employee_email', 'date']].copy()\n",
+        "negative_msgs = negative_msgs.sort_values(['employee', 'date'])\n",
+        "\n",
+        "def check_flight_risk(dates, threshold=4, window_days=30):\n",
+        "    \"\"\"Check if any 30-day rolling window has >= threshold negative messages.\"\"\"\n",
+        "    dates_sorted = sorted(dates)\n",
+        "    n = len(dates_sorted)\n",
+        "    if n < threshold:\n",
+        "        return False, n, None\n",
+        "    \n",
+        "    max_count = 0\n",
+        "    worst_window_start = None\n",
+        "    \n",
+        "    for i in range(n):\n",
+        "        window_end = dates_sorted[i] + pd.Timedelta(days=window_days)\n",
+        "        count = sum(1 for d in dates_sorted[i:] if d <= window_end)\n",
+        "        if count > max_count:\n",
+        "            max_count = count\n",
+        "            worst_window_start = dates_sorted[i]\n",
+        "    \n",
+        "    return max_count >= threshold, max_count, worst_window_start\n",
+        "\n",
+        "# Analyze each employee\n",
+        "flight_risk_results = []\n",
+        "for employee, group in negative_msgs.groupby('employee'):\n",
+        "    email = group['employee_email'].iloc[0]\n",
+        "    dates = group['date'].tolist()\n",
+        "    is_risk, max_neg, window_start = check_flight_risk(dates)\n",
+        "    flight_risk_results.append({\n",
+        "        'employee': employee,\n",
+        "        'employee_email': email,\n",
+        "        'total_negative_msgs': len(dates),\n",
+        "        'max_negatives_in_30d_window': max_neg,\n",
+        "        'is_flight_risk': is_risk,\n",
+        "        'worst_window_start': window_start\n",
+        "    })\n",
+        "\n",
+        "flight_risk_df = pd.DataFrame(flight_risk_results)\n",
+        "flagged = flight_risk_df[flight_risk_df['is_flight_risk'] == True].sort_values(\n",
+        "    'max_negatives_in_30d_window', ascending=False)\n",
+        "\n",
+        "print(f'Total employees analyzed: {len(flight_risk_df)}')\n",
+        "print(f'Employees flagged as FLIGHT RISK: {len(flagged)}')\n",
+        "print()\n",
+        "if len(flagged) > 0:\n",
+        "    print(flagged[['employee', 'employee_email', 'total_negative_msgs', 'max_negatives_in_30d_window']].to_string(index=False))\n",
+        "else:\n",
+        "    print('No employees meet the flight risk threshold.')\n",
+        "\n",
+        "flight_risk_df.to_csv('flight_risk_results.csv', index=False)\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Flight risk visualization\n",
+        "fig, ax = plt.subplots(figsize=(12, max(6, len(flagged) * 0.5 + 2)))\n",
+        "\n",
+        "if len(flagged) > 0:\n",
+        "    top_risks = flagged.head(20)\n",
+        "    ax.barh(range(len(top_risks)), top_risks['max_negatives_in_30d_window'].values,\n",
+        "            color='#e74c3c', edgecolor='white')\n",
+        "    ax.set_yticks(range(len(top_risks)))\n",
+        "    ax.set_yticklabels(top_risks['employee'].values)\n",
+        "    ax.set_xlabel('Max Negative Messages in Any 30-Day Window')\n",
+        "    ax.set_title('Flight Risk Employees\\n(≥4 negative messages in any 30-day window)',\n",
+        "                fontsize=14, fontweight='bold')\n",
+        "    ax.axvline(x=4, color='red', linestyle='--', linewidth=2, label='Threshold (4)')\n",
+        "    ax.legend()\n",
+        "    ax.invert_yaxis()\n",
+        "    for i, v in enumerate(top_risks['max_negatives_in_30d_window'].values):\n",
+        "        ax.text(v + 0.1, i, str(v), va='center', fontweight='bold')\n",
+        "else:\n",
+        "    ax.text(0.5, 0.5, 'No employees flagged as flight risk',\n",
+        "            ha='center', va='center', fontsize=16, transform=ax.transAxes)\n",
+        "    ax.set_title('Flight Risk Employees', fontsize=14, fontweight='bold')\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/flight_risk.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    # ── Task 6 ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='task6'></a>\n",
+        "## Task 6: Predictive Modeling (Linear Regression)\n",
+        "\n",
+        "### Objective\n",
+        "\n",
+        "Build a linear regression model to predict monthly employee sentiment scores.\n",
+        "\n",
+        "### Features\n",
+        "- `msg_count` — Total messages sent that month\n",
+        "- `avg_msg_length` — Average message length (characters)\n",
+        "- `avg_word_count` — Average word count per message\n",
+        "- `total_words` — Total words written that month\n",
+        "- `positive_ratio` — Fraction of positive messages\n",
+        "- `negative_ratio` — Fraction of negative messages\n",
+        "\n",
+        "### Target\n",
+        "- `total_score` — Monthly sentiment score\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Build feature matrix\n",
+        "features_df = df.groupby(['employee', 'year_month']).agg(\n",
+        "    total_score=('score', 'sum'),\n",
+        "    msg_count=('score', 'count'),\n",
+        "    avg_msg_length=('msg_length', 'mean'),\n",
+        "    avg_word_count=('word_count', 'mean'),\n",
+        "    total_words=('word_count', 'sum'),\n",
+        "    positive_count=('score', lambda x: (x == 1).sum()),\n",
+        "    negative_count=('score', lambda x: (x == -1).sum()),\n",
+        ").reset_index()\n",
+        "\n",
+        "features_df['positive_ratio'] = features_df['positive_count'] / features_df['msg_count']\n",
+        "features_df['negative_ratio'] = features_df['negative_count'] / features_df['msg_count']\n",
+        "\n",
+        "feature_cols = ['msg_count', 'avg_msg_length', 'avg_word_count', 'total_words',\n",
+        "                'positive_ratio', 'negative_ratio']\n",
+        "target_col = 'total_score'\n",
+        "\n",
+        "X = features_df[feature_cols].fillna(0)\n",
+        "y = features_df[target_col]\n",
+        "\n",
+        "print(f'Feature matrix shape: {X.shape}')\n",
+        "print(f'Target stats: mean={y.mean():.2f}, std={y.std():.2f}')\n",
+        "\n",
+        "# Train-test split\n",
+        "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n",
+        "print(f'Train: {len(X_train)}, Test: {len(X_test)}')\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Train linear regression\n",
+        "lr_model = LinearRegression()\n",
+        "lr_model.fit(X_train, y_train)\n",
+        "\n",
+        "# Predictions\n",
+        "y_pred_train = lr_model.predict(X_train)\n",
+        "y_pred_test = lr_model.predict(X_test)\n",
+        "\n",
+        "# Metrics\n",
+        "r2_train = r2_score(y_train, y_pred_train)\n",
+        "r2_test = r2_score(y_test, y_pred_test)\n",
+        "mae_test = mean_absolute_error(y_test, y_pred_test)\n",
+        "rmse_test = np.sqrt(mean_squared_error(y_test, y_pred_test))\n",
+        "\n",
+        "print('── MODEL PERFORMANCE ──')\n",
+        "print(f'  Training R²:  {r2_train:.4f}')\n",
+        "print(f'  Test R²:      {r2_test:.4f}')\n",
+        "print(f'  Test MAE:     {mae_test:.4f}')\n",
+        "print(f'  Test RMSE:    {rmse_test:.4f}')\n",
+        "\n",
+        "print(f'\\n── FEATURE COEFFICIENTS ──')\n",
+        "coef_df = pd.DataFrame({\n",
+        "    'Feature': feature_cols,\n",
+        "    'Coefficient': lr_model.coef_\n",
+        "}).sort_values('Coefficient', ascending=False)\n",
+        "print(coef_df.to_string(index=False))\n",
+        "print(f'\\nIntercept: {lr_model.intercept_:.4f}')\n",
+    ]))
+    
+    cells.append(make_cell("markdown", [
+        "### Model Interpretation\n",
+        "\n",
+        "The coefficients reveal the relationship between each feature and the predicted sentiment score:\n",
+        "- **Positive ratio** and **negative ratio** have the strongest coefficients, as they directly reflect sentiment composition\n",
+        "- **Message count** and **word count** features capture communication intensity\n",
+        "- The model provides a baseline for understanding which employee behaviors predict sentiment trends\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Model performance visualizations\n",
+        "fig, axes = plt.subplots(1, 3, figsize=(18, 5))\n",
+        "\n",
+        "# Actual vs Predicted\n",
+        "axes[0].scatter(y_test, y_pred_test, alpha=0.5, color='#3498db', s=30)\n",
+        "min_val = min(y_test.min(), y_pred_test.min())\n",
+        "max_val = max(y_test.max(), y_pred_test.max())\n",
+        "axes[0].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect prediction')\n",
+        "axes[0].set_xlabel('Actual Score', fontsize=12)\n",
+        "axes[0].set_ylabel('Predicted Score', fontsize=12)\n",
+        "axes[0].set_title(f'Actual vs Predicted\\n(R² = {r2_test:.4f})', fontsize=13, fontweight='bold')\n",
+        "axes[0].legend()\n",
+        "\n",
+        "# Residuals\n",
+        "residuals = y_test - y_pred_test\n",
+        "axes[1].scatter(y_pred_test, residuals, alpha=0.5, color='#e67e22', s=30)\n",
+        "axes[1].axhline(y=0, color='red', linestyle='--', linewidth=2)\n",
+        "axes[1].set_xlabel('Predicted Score', fontsize=12)\n",
+        "axes[1].set_ylabel('Residual', fontsize=12)\n",
+        "axes[1].set_title('Residual Plot', fontsize=13, fontweight='bold')\n",
+        "\n",
+        "# Feature importance\n",
+        "coef_sorted = coef_df.sort_values('Coefficient')\n",
+        "bar_colors = ['#2ecc71' if c > 0 else '#e74c3c' for c in coef_sorted['Coefficient']]\n",
+        "axes[2].barh(coef_sorted['Feature'], coef_sorted['Coefficient'], color=bar_colors, edgecolor='white')\n",
+        "axes[2].set_xlabel('Coefficient Value', fontsize=12)\n",
+        "axes[2].set_title('Feature Importance', fontsize=13, fontweight='bold')\n",
+        "axes[2].axvline(x=0, color='black', linewidth=0.8)\n",
+        "\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/model_performance.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Residual distribution\n",
+        "fig, ax = plt.subplots(figsize=(10, 5))\n",
+        "ax.hist(residuals, bins=30, color='#9b59b6', alpha=0.7, edgecolor='white')\n",
+        "ax.set_xlabel('Residual Value')\n",
+        "ax.set_ylabel('Frequency')\n",
+        "ax.set_title('Distribution of Prediction Residuals', fontsize=14, fontweight='bold')\n",
+        "ax.axvline(x=0, color='red', linestyle='--', linewidth=2)\n",
+        "ax.axvline(x=residuals.mean(), color='blue', linestyle='--', label=f'Mean: {residuals.mean():.3f}')\n",
+        "ax.legend()\n",
+        "plt.tight_layout()\n",
+        "plt.savefig(f'{VIZ_DIR}/residual_distribution.png', dpi=150, bbox_inches='tight')\n",
+        "plt.show()\n",
+    ]))
+    
+    # ── Summary ──
+    cells.append(make_cell("markdown", [
+        "---\n",
+        "\n",
+        "<a id='summary'></a>\n",
+        "## Summary & Conclusions\n",
+        "\n",
+        "### Key Findings\n",
+        "\n",
+        "1. **Sentiment Distribution:** The analysis reveals the overall tone of employee communications across the organization.\n",
+        "\n",
+        "2. **Top Performers:** Employees with consistently positive scores demonstrate constructive communication patterns that can serve as organizational models.\n",
+        "\n",
+        "3. **At-Risk Employees:** The flight risk analysis identifies employees with concentrated negative messaging patterns, enabling proactive intervention.\n",
+        "\n",
+        "4. **Predictive Insights:** The linear regression model reveals which message characteristics most strongly correlate with sentiment, enabling data-driven monitoring.\n",
+        "\n",
+        "### Recommendations\n",
+        "\n",
+        "- **Proactive Engagement:** Prioritize check-ins with flight-risk employees\n",
+        "- **Best Practices:** Study communication patterns of top-positive employees\n",
+        "- **Continuous Monitoring:** Update the model with new data for improved accuracy\n",
+        "- **Organizational Events:** Correlate sentiment trends with known events for context\n",
+    ]))
+    
+    cells.append(make_cell("code", [
+        "# Final summary\n",
+        "print('=' * 60)\n",
+        "print('ANALYSIS COMPLETE')\n",
+        "print('=' * 60)\n",
+        "print(f'\\nTotal messages analyzed: {len(df):,}')\n",
+        "print(f'Unique employees: {df[\"employee\"].nunique()}')\n",
+        "print(f'Date range: {df[\"date\"].min().date()} to {df[\"date\"].max().date()}')\n",
+        "print(f'\\nSentiment Distribution:')\n",
+        "for sent, count in df['sentiment'].value_counts().items():\n",
+        "    print(f'  {sent}: {count:,} ({count/len(df)*100:.1f}%)')\n",
+        "print(f'\\nModel R²: {r2_test:.4f}')\n",
+        "print(f'Flight risk employees: {len(flagged)}')\n",
+    ]))
+    
+    # ── Build notebook ──
+    notebook = {
+        "cells": cells,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3"
+            },
+            "language_info": {
+                "name": "python",
+                "version": "3.13.0"
+            }
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5
+    }
+    
+    output_path = 'Employee_Sentiment_Analysis.ipynb'
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(notebook, f, indent=1, ensure_ascii=False)
+    
+    print(f"Notebook saved to {output_path}")
+
+
+if __name__ == '__main__':
+    create_notebook()
+    print("Jupyter notebook created successfully!")

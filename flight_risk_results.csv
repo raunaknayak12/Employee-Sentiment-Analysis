@@ -1,0 +1,11 @@
+employee,employee_email,total_negative_msgs,max_negatives_in_30d_window,is_flight_risk,worst_window_start
+Bobette Riner,bobette.riner@ipgdirect.com,14,3,False,2010-08-26
+Don Baughman,don.baughman@enron.com,5,2,False,2010-04-13
+Eric Bass,eric.bass@enron.com,8,2,False,2010-09-13
+John Arnold,john.arnold@enron.com,20,3,False,2010-06-06
+Johnny Palmer,johnny.palmer@enron.com,11,2,False,2010-02-09
+Kayne Coulter,kayne.coulter@enron.com,9,2,False,2010-12-31
+Lydia Delgado,lydia.delgado@enron.com,18,3,False,2011-04-16
+Patti Thompson,patti.thompson@enron.com,15,3,False,2010-04-11
+Rhonda Denton,rhonda.denton@enron.com,11,3,False,2010-12-24
+Sally Beck,sally.beck@enron.com,12,2,False,2010-01-23
