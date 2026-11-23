@@ -10,12 +10,12 @@
 
 This project analyzes employee communication patterns to evaluate sentiment and engagement levels. Using Natural Language Processing (NLP) and machine learning techniques, we:
 
-1. **Labeled** ~2,191 messages as Positive, Negative, or Neutral using a pre-trained RoBERTa transformer model
-2. **Explored** data trends through comprehensive EDA with visualizations
-3. **Scored** employees monthly based on sentiment (+1/0/-1)
-4. **Ranked** employees by sentiment scores
-5. **Identified** flight-risk employees using a rolling 30-day window analysis
-6. **Built** a linear regression model to predict sentiment trends
+1. **Labeled** ~2,191 messages as Positive, Negative, or Neutral using Hugging Face's `cardiffnlp/twitter-roberta-base-sentiment-latest` transformer model
+2. **Explored** communication and organizational dynamics through comprehensive EDA with 13 custom Matplotlib/Seaborn visualizations
+3. **Scored** employees on a monthly basis using a standardized scoring rubric (+1 for Positive, 0 for Neutral, -1 for Negative)
+4. **Ranked** employees by aggregated sentiment scores to highlight constructive leaders and communication bottlenecks
+5. **Identified** flight-risk employees using a rolling 30-day temporal window detector (threshold: $\ge 4$ negative emails)
+6. **Built** an OLS linear regression model ($R^2 = 0.5942$) predicting employee monthly sentiment based on communication volume, length, and temporal cadence
 
 ---
 
@@ -29,7 +29,7 @@ This project analyzes employee communication patterns to evaluate sentiment and 
 | 2 | Sally Beck | 40 |
 | 3 | Lydia Delgado | 38 |
 
-### [!]️ Top 3 Most Negative Employees (Overall)
+### ⚠️ Top 3 Most Negative Employees (Overall)
 
 | Rank | Employee | Total Score |
 |------|----------|-------------|
